@@ -93,8 +93,11 @@ chat(_Config) ->
     mchat:join(P, xx, self()),
     mchat:send(P, xx, foo),
     receive
-        {chat_msg, foo} ->
-            next
+        {send, foo} ->
+            next;
+        Msg ->
+            ct:pal(Msg),
+            exit(error_msg)
     after
         100 ->
             exit(no_foo_reveice)
