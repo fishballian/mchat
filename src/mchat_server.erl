@@ -27,7 +27,8 @@
 -define(SERVER, ?MODULE).
 -define(BATCH_LEN, 10).
 
--record(state, {names = [], pids = []}).
+-record(state, {clients = []}).
+-record(client, {name, pid}).
 
 %%%===================================================================
 %%% API
@@ -99,22 +100,21 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({join, Name, Pid}, State) ->
-    #state{names = Names, pids = Pids} = State,
-    {Names2, Pids2} = case lists:member(Name, Names) of
-                          true ->
-                              {Names, Pids};
-                          _ ->
-
-                              {[Name | Names], [Pid | Pids]}
-                      end,
-    {noreply, State#state{names = Names2, pids = Pids2}};
+    #state{clients = Clients} = State,
+    Clients2 = case lists:keymember(Name, #client.name, Clients) of
+                   true ->
+                       Clients;
+                   _ ->
+                       [#client{name = Name, pid = Pid} | Clients]
+               end,
+    {noreply, State#state{clients = Clients2}};
 handle_cast({leave, Name}, State) ->
-    #state{names = Names, pids = Pids} = State,
-    {Names2, Pids2} = do_delete(Name, Names, Pids),
-    {noreply, State#state{names = Names2, pids = Pids2}};
+    #state{clients = Clients} = State,
+    Clients2 = lists:keydelete(Name, #client.name, Clients),
+    {noreply, State#state{clients = Clients2}};
 handle_cast({send, _Name, Msg}, State) ->
-    #state{pids = Pids} = State,
-    do_send(Pids, Msg),
+    #state{clients = Clients} = State,
+    do_send(Clients, Msg),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -160,27 +160,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-do_send(Pids, Msg) ->
-    do_send(Pids, Msg, [], 0).
+do_send(Clients, Msg) ->
+    do_send(Clients, Msg, [], 0).
 
 do_send([], Msg, Acc, _Len) ->
     do_send2(Acc, Msg);
-do_send(Pids, Msg, Acc, Len) when Len >= ?BATCH_LEN ->
+do_send(Clients, Msg, Acc, Len) when Len >= ?BATCH_LEN ->
     do_send2(Acc, Msg),
-    do_send(Pids, Msg, [], 0);
+    do_send(Clients, Msg, [], 0);
 do_send([H | T], Msg, Acc, Len) ->
     do_send(T, Msg, [H | Acc], Len + 1).
 
 do_send2(Pids, Msg) ->
-    erlang:spawn(fun() -> [Pid ! {chat_msg, Msg} || Pid <- Pids] end).
+    erlang:spawn(fun() -> [Pid ! {chat_msg, Msg} || #client{pid = Pid} <- Pids] end).
 
-
-do_delete(Name, Names, Pids) ->
-    do_delete(Name, Names, Pids, [], []).
-
-do_delete(_Name, [], [], NameAcc, PidAcc) ->
-    {NameAcc, PidAcc};
-do_delete(Name, [Name | T], [_Pid | T2], NameAcc, PidAcc) ->
-    {T ++ NameAcc, T2 ++ PidAcc};
-do_delete(Name, [NameT | T], [PidT | T2], NameAcc, PidAcc) ->
-    do_delete(Name, T, T2, [NameT | NameAcc], [PidT | PidAcc]).
