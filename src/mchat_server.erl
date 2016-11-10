@@ -172,7 +172,7 @@ do_send([H | T], Msg, Acc, Len) ->
     do_send(T, Msg, [H | Acc], Len + 1).
 
 do_send2(Pids, Msg) ->
-    erlang:spawn(fun() -> [Pid ! Msg || Pid <- Pids] end).
+    erlang:spawn(fun() -> [Pid ! {chat_msg, Msg} || Pid <- Pids] end).
 
 
 do_delete(Name, Names, Pids) ->
