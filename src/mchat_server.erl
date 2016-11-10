@@ -27,7 +27,7 @@
 -define(SERVER, ?MODULE).
 -define(BATCH_LEN, 10).
 
--record(state, {names, pids}).
+-record(state, {names = [], pids = []}).
 
 %%%===================================================================
 %%% API
@@ -41,7 +41,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+    gen_server:start_link(?MODULE, [], []).
 
 join(ChannelPid, Name, ClientPid) ->
     gen_server:cast(ChannelPid, {join, Name, ClientPid}).

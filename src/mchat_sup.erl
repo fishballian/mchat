@@ -28,7 +28,7 @@ start_link() ->
 
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
-    {ok, { {one_for_all, 0, 1}, []} }.
+    {ok, { {simple_one_for_one, 0, 1}, [{mchat_server, {mchat_server,start_link, []}, transient, brutal_kill, worker, [mchat_server]}] }}.
 
 %%====================================================================
 %% Internal functions
