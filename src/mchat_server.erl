@@ -26,9 +26,8 @@
 
 -define(SERVER, ?MODULE).
 -define(BATCH_LEN, 10).
--define(DEFAULT_WORKER_NUM, 8).
 
--record(state, {workers = [], clients = [], worker_num}).
+-record(state, {clients = []}).
 -record(client, {name, pid}).
 
 %%%===================================================================
@@ -70,18 +69,7 @@ send(ChannelPid, Name, Msg) ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    WorkerNum = case application:get_env(mchat, worker_num) of
-                    {ok, WorkerNumT} ->
-                        WorkerNumT;
-                    _ ->
-                        ?DEFAULT_WORKER_NUM
-                end,
-
-    Workers = [begin
-                   {ok, Pid} = mchat_worker:start_link(),
-                   Pid
-               end || _I <- lists:duplicate(WorkerNum, 0)],
-    {ok, #state{workers = Workers, worker_num = WorkerNum}}.
+    {ok, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -112,32 +100,21 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({join, Name, Pid}, State) ->
-    #state{clients = Clients, worker_num = WorkerNum, workers = Workers} = State,
+    #state{clients = Clients} = State,
     Clients2 = case lists:keymember(Name, #client.name, Clients) of
                    true ->
                        Clients;
                    _ ->
                        [#client{name = Name, pid = Pid} | Clients]
                end,
-    Hash = erlang:phash2(Name, WorkerNum), 
-    Worker = lists:nth(Hash + 1, Workers),
-    mchat_worker:add(Worker, Pid),
     {noreply, State#state{clients = Clients2}};
 handle_cast({leave, Name}, State) ->
-    #state{clients = Clients, worker_num = WorkerNum, workers = Workers} = State,
+    #state{clients = Clients} = State,
     Clients2 = lists:keydelete(Name, #client.name, Clients),
-    case lists:keytake(Name, #client.name, Clients) of
-        {value, Client, Clients2} ->
-            Hash = erlang:phash2(Name, WorkerNum), 
-            Worker = lists:nth(Hash + 1, Workers),
-            mchat_worker:del(Worker, Client#client.pid);
-        _ ->
-            Clients2 = Clients
-    end,
     {noreply, State#state{clients = Clients2}};
 handle_cast({send, _Name, Msg}, State) ->
-    #state{workers = Workers} = State,
-    [mchat_worker:send(Worker, Msg) || Worker <- Workers],
+    #state{clients = Clients} = State,
+    do_send(Clients, Msg),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -183,4 +160,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+do_send(Clients, Msg) ->
+    do_send(Clients, Msg, [], 0).
+
+do_send([], Msg, Acc, _Len) ->
+    do_send2(Acc, Msg);
+do_send(Clients, Msg, Acc, Len) when Len >= ?BATCH_LEN ->
+    do_send2(Acc, Msg),
+    do_send(Clients, Msg, [], 0);
+do_send([H | T], Msg, Acc, Len) ->
+    do_send(T, Msg, [H | Acc], Len + 1).
+
+do_send2(Pids, Msg) ->
+    erlang:spawn(fun() -> [Pid ! {send, Msg} || #client{pid = Pid} <- Pids] end).
 
